@@ -68,6 +68,7 @@ import threading
 import time
 import traceback
 from array import array
+from pathlib import Path
 
 from parakeet_nemotron_addon import ADDON_ID, PROTOCOL_VERSION, __version__
 from parakeet_nemotron_addon import download, engine, models, speakers, tls
@@ -816,6 +817,13 @@ def main() -> int:
     tls.configure_ca_bundle()
     if '--self-test' in sys.argv[1:]:
         return _self_test()
+    if '--probe-gpu' in sys.argv[1:]:
+        # engine.metal_works() runs this in a child: Metal may crash the process.
+        at = sys.argv.index('--probe-gpu')
+        kind, model = sys.argv[at + 1:at + 3]
+        engine.probe_gpu(kind, Path(model))
+        print('metal works', file=sys.__stdout__, flush=True)
+        return 0
     _claim_protocol_stdio()
     log.info('parakeet-nemotron-addon %s on %s %s, python %s',
              ADDON_VERSION, platform.system(), platform.machine(), platform.python_version())

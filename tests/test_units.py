@@ -181,3 +181,44 @@ def test_a_speaker_keeps_its_letter_across_windows():
 def test_no_turns_is_one_speaker():
     assert speakers.assign(_words(('x', 0, 1)), [])[0]['speaker'] == 'A'
     assert [speakers.label(i) for i in (0, 25, 26)] == ['A', 'Z', 'AA']
+
+
+# ---------------------------------------------------------------------------
+# Metal, tried once in a child process
+# ---------------------------------------------------------------------------
+def test_metal_is_used_only_where_a_child_survives_it(monkeypatch, tmp_path):
+    from parakeet_nemotron_addon import engine
+    monkeypatch.setenv('SUBTITLD_MODELS_DIR', str(tmp_path))
+    monkeypatch.delenv('PARAKEET_NEMOTRON_DEVICE', raising=False)
+    monkeypatch.setattr(engine, '_apple_silicon', lambda: True)
+    monkeypatch.setattr(engine, 'runtime_version', lambda: 'nemo-speech-asr 0.3.0')
+    monkeypatch.setattr(engine, '_verdicts', {})
+    crash = [sys.executable, '-c', 'import os, signal; os.kill(os.getpid(), signal.SIGSEGV)']
+    if sys.platform == 'win32':
+        crash = [sys.executable, '-c', 'import sys; sys.exit(3221225477)']
+    answer = [sys.executable, '-c', 'print("metal works")']
+    commands = {'asr': crash, 'diar': answer}
+    calls = []
+
+    def command(kind, _path):
+        calls.append(kind)
+        return commands[kind]
+
+    monkeypatch.setattr(engine, '_probe_command', command)
+    assert engine._gpu_choices('asr', tmp_path / 'm.gguf') == (-1,)
+    assert engine._gpu_choices('diar', tmp_path / 'd.gguf') == (0, -1)
+    assert engine._gpu_choices('asr', tmp_path / 'm.gguf') == (-1,)
+    assert calls == ['asr', 'diar']
+    # Kept on disk for the next process, per runtime and macOS version.
+    monkeypatch.setattr(engine, '_verdicts', {})
+    assert engine._gpu_choices('asr', tmp_path / 'm.gguf') == (-1,) and calls == ['asr', 'diar']
+    monkeypatch.setattr(engine, 'runtime_version', lambda: 'nemo-speech-asr 0.3.1')
+    monkeypatch.setattr(engine, '_verdicts', {})
+    engine._gpu_choices('asr', tmp_path / 'm.gguf')
+    assert calls == ['asr', 'diar', 'asr']
+    # The environment can decide instead.
+    monkeypatch.setenv('PARAKEET_NEMOTRON_DEVICE', 'cpu')
+    assert engine._gpu_choices('diar', tmp_path / 'd.gguf') == (-1,)
+    monkeypatch.setattr(engine, '_apple_silicon', lambda: False)
+    monkeypatch.setenv('PARAKEET_NEMOTRON_DEVICE', 'gpu')
+    assert engine._gpu_choices('asr', tmp_path / 'm.gguf') == (-1,)

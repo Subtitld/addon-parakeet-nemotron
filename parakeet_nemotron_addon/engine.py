@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import ctypes
 import logging
+import math
 import os
 import platform
 import sys
@@ -238,9 +239,97 @@ def _error(lib, status: int, what: str) -> EngineError:
     return cls(f'{what} failed: {message}')
 
 
-def _gpu_choices() -> tuple[int, ...]:
-    """Metal (device 0) first on Apple Silicon, where the library is the Metal build; the CPU elsewhere."""
-    if sys.platform == 'darwin' and platform.machine() == 'arm64':
+# ---------------------------------------------------------------------------
+# Metal, on Apple Silicon: tried once in a child process
+# ---------------------------------------------------------------------------
+# NVIDIA's macOS library is the Metal build. Where Metal is not up to it (the
+# paravirtual GPU of a macOS virtual machine, at least), the first graph run
+# on it kills the process with a segmentation fault, which nothing in-process
+# can catch. So before the add-on uses Metal for a kind of model, it runs one
+# short recognition on it in a child process (`--probe-gpu`), and uses the CPU
+# when the child does not come back with an answer. The verdict is kept in the
+# model folder, per runtime and macOS version, so this happens once.
+# $PARAKEET_NEMOTRON_DEVICE=cpu or gpu skips the test.
+PROBE_TIMEOUT_SEC = 300  # loading on Metal compiles its shaders: 40 s on a CI machine
+_probe_lock = threading.Lock()
+_verdicts: dict[str, bool] = {}
+
+
+def _apple_silicon() -> bool:
+    return sys.platform == 'darwin' and platform.machine() == 'arm64'
+
+
+def _verdict_file() -> Path:
+    from parakeet_nemotron_addon import download
+    return download.cache_root() / 'metal-check.json'
+
+
+def _probe_command(kind: str, model_path: Path) -> list[str]:
+    if getattr(sys, 'frozen', False):
+        return [sys.executable, '--probe-gpu', kind, str(model_path)]
+    return [sys.executable, '-m', 'parakeet_nemotron_addon', '--probe-gpu', kind, str(model_path)]
+
+
+def metal_works(kind: str, model_path: Path) -> bool:
+    """Whether `kind` ('asr' or 'diar') of model runs on Metal here; checked once, in a child process."""
+    import json
+    import subprocess
+    with _probe_lock:
+        if kind in _verdicts:
+            return _verdicts[kind]
+        key = f'{runtime_version()} on macOS {platform.mac_ver()[0]}'
+        path = _verdict_file()
+        try:
+            saved = json.loads(path.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            saved = {}
+        if saved.get('runtime') == key and isinstance(saved.get(kind), bool):
+            _verdicts[kind] = saved[kind]
+            return saved[kind]
+        started = time.monotonic()
+        try:
+            done = subprocess.run(_probe_command(kind, model_path), stdin=subprocess.DEVNULL,
+                                  capture_output=True, timeout=PROBE_TIMEOUT_SEC)
+            works = done.returncode == 0 and b'metal works' in done.stdout
+            detail = f'exit {done.returncode}'
+        except (OSError, subprocess.SubprocessError) as exc:
+            works, detail = False, str(exc)
+        log.info('Metal for %s: %s (%s, %.1fs)', kind, 'works' if works else 'fails; using the CPU', detail,
+                 time.monotonic() - started)
+        _verdicts[kind] = works
+        if saved.get('runtime') != key:
+            saved = {'runtime': key}
+        saved[kind] = works
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(saved) + '\n', encoding='utf-8')
+        except OSError as exc:
+            log.warning('could not save the Metal check: %s', exc)
+        return works
+
+
+def probe_gpu(kind: str, model_path: Path) -> bool:
+    """The child's side of metal_works(): one short run on the GPU only. A crash is the answer too."""
+    samples = array('f', (0.3 * math.sin(2 * math.pi * 220 * i / SAMPLE_RATE) * (i // 800 % 2)
+                          for i in range(2 * SAMPLE_RATE)))
+    if kind == 'diar':
+        model = Diarizer(model_path, gpus=(0,))
+        model.diarize(samples)
+    else:
+        model = Recognizer(model_path, gpus=(0,))
+        model.recognize(samples)
+    model.close()
+    return True
+
+
+def _gpu_choices(kind: str, model_path: Path) -> tuple[int, ...]:
+    """Metal (device 0), then the CPU, on Apple Silicon when Metal works; the CPU elsewhere."""
+    if not _apple_silicon():
+        return (-1,)
+    device = (os.environ.get('PARAKEET_NEMOTRON_DEVICE') or '').strip().lower()
+    if device == 'cpu':
+        return (-1,)
+    if device in ('gpu', 'metal') or metal_works(kind, model_path):
         return (0, -1)
     return (-1,)
 
@@ -298,7 +387,8 @@ class Recognizer:
     without a new word, which is what makes a live caption final.
     """
 
-    def __init__(self, model_path: Path, right_context: int = -1, endpointing: bool = False):
+    def __init__(self, model_path: Path, right_context: int = -1, endpointing: bool = False,
+                 gpus: tuple[int, ...] | None = None):
         self._lib = load_library()
         self.model_path = Path(model_path)
         self.right_context = right_context
@@ -308,7 +398,7 @@ class Recognizer:
         ending = EndpointingConfig(ctypes.sizeof(EndpointingConfig), endpointing, False, 0)
         started = time.monotonic()
         error = None
-        for gpu in _gpu_choices():
+        for gpu in gpus if gpus is not None else _gpu_choices('asr', self.model_path):
             backend = BackendConfig(ctypes.sizeof(BackendConfig), gpu)
             config = RecognizerConfig(ctypes.sizeof(RecognizerConfig), ctypes.pointer(backend),
                                       ctypes.pointer(model), ctypes.pointer(streaming), None, None,
@@ -418,12 +508,12 @@ class Diarizer:
     streaming path: the offline one has a length limit, and the stream keeps a
     speaker the same speaker for the whole file."""
 
-    def __init__(self, model_path: Path):
+    def __init__(self, model_path: Path, gpus: tuple[int, ...] | None = None):
         self._lib = load_library()
         self.model_path = Path(model_path)
         self._handle = c_void_p()
         error = None
-        for gpu in _gpu_choices():
+        for gpu in gpus if gpus is not None else _gpu_choices('diar', self.model_path):
             config = DiarModelConfig(ctypes.sizeof(DiarModelConfig), str(self.model_path).encode('utf-8'), gpu,
                                      PRESET, 0, 0, -1, 0, 0, 0)
             status = self._lib.nemo_speech_diar_create(byref(config), byref(self._handle))
