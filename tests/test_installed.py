@@ -207,8 +207,13 @@ def test_a_cancel_stops_a_long_file(tmp_path):
         _send(proc, {'id': 'long', 'type': 'asr.transcribe',
                      'params': {'audio_path': str(long_file), 'language': 'en'}})
         while True:  # wait until it is transcribing, then cancel
-            frame = json.loads(proc.stdout.readline())
-            if frame.get('id') == 'long' and frame['type'] == 'progress' and frame['message'] == 'Transcribing...':
+            line = proc.stdout.readline()
+            assert line, _log(proc)
+            frame = json.loads(line)
+            if frame.get('id') != 'long':
+                continue
+            assert frame['type'] not in ('result', 'error'), frame
+            if frame['type'] == 'progress' and frame['message'] == 'Transcribing...':
                 break
         _send(proc, {'type': 'cancel', 'target': 'long'})
         frame, _ = _wait(proc, 'long')

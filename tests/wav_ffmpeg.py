@@ -11,6 +11,8 @@ for 16 kHz mono float32 on stdout; this answers the same call for a 16 kHz
     python wav_ffmpeg.py -nostdin ... -i INPUT ... -f f32le pipe:1
 """
 
+from __future__ import annotations
+
 import struct
 import sys
 import wave
