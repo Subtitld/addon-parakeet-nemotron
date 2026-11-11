@@ -1,0 +1,159 @@
+{
+  "manifest_version": 1,
+  "id": "parakeet-nemotron",
+  "version": "26.11.1",
+  "display_name": "Parakeet & Nemotron (offline, 33 languages)",
+  "summary": "NVIDIA's Parakeet and Nemotron speech models, offline on your computer: subtitles from a file in 33 languages with accurate word timing, speaker labels if you want them, and live captions while you record in 28. Parakeet (714 MB) transcribes the 25 European languages and Nemotron (742 MB) the others and the live captions; each downloads the first time it is needed.",
+  "author": "Subtitld",
+  "homepage": "https://github.com/Subtitld/addon-parakeet-nemotron",
+  "license": "Apache-2.0 (add-on and NeMo-Speech.cpp runtime); models downloaded on first use: CC-BY-4.0 (Parakeet TDT 0.6B v3), OpenMDW-1.1 (Nemotron 3.5 ASR Streaming 0.6B, Nemotron-3-Diarization)",
+  "executable": "bin/parakeet-nemotron-addon",
+  "protocol": 1,
+  "startup_timeout_sec": 30,
+  "platforms": [
+    "linux",
+    "macos",
+    "windows"
+  ],
+  "tasks": [
+    "asr.transcribe",
+    "asr.stream"
+  ],
+  "compute": "cpu",
+  "accelerators": [
+    "mps"
+  ],
+  "languages": [
+    "ar",
+    "bg",
+    "cs",
+    "da",
+    "de",
+    "el",
+    "en",
+    "es",
+    "et",
+    "fi",
+    "fr",
+    "hi",
+    "hr",
+    "hu",
+    "it",
+    "ja",
+    "ko",
+    "lt",
+    "lv",
+    "mt",
+    "nb",
+    "nl",
+    "pl",
+    "pt",
+    "ro",
+    "ru",
+    "sk",
+    "sl",
+    "sv",
+    "tr",
+    "uk",
+    "vi",
+    "zh"
+  ],
+  "models": [
+    {
+      "id": "parakeet",
+      "display_name": "Parakeet TDT 0.6B v3 (25 European languages, files)",
+      "repo": "nvidia/parakeet-tdt-0.6b-v3",
+      "revision": "541d1f99c6b0c3cd0b11a95167540bb8edefd82b",
+      "size_mb": 714,
+      "license": "CC-BY-4.0",
+      "bundled": false,
+      "default": true
+    },
+    {
+      "id": "nemotron",
+      "display_name": "Nemotron 3.5 ASR Streaming 0.6B (28 languages, live captions)",
+      "repo": "nvidia/nemotron-3.5-asr-streaming-0.6b",
+      "revision": "1c8deaecc64b91f034d73e08dd8b64625eb3395d",
+      "size_mb": 742,
+      "license": "OpenMDW-1.1",
+      "bundled": false,
+      "default": false
+    },
+    {
+      "id": "diarization",
+      "display_name": "Nemotron-3-Diarization (speaker labels, up to 8 speakers)",
+      "repo": "nvidia/Nemotron-3-Diarization",
+      "revision": "f667ed73aee57d40cc39428eb768b4fd87a0a29e",
+      "size_mb": 107,
+      "license": "OpenMDW-1.1",
+      "bundled": false,
+      "default": false
+    }
+  ],
+  "disk_required_mb": 1700,
+  "ram_required_mb": 2048,
+  "config_schema": {
+    "fields": [
+      {
+        "key": "model",
+        "type": "select",
+        "label": "Model",
+        "default": "auto",
+        "options": [
+          {
+            "value": "auto",
+            "label": "Automatic: Parakeet where it covers the language, Nemotron elsewhere"
+          },
+          {
+            "value": "parakeet",
+            "label": "Parakeet: 25 European languages, the most accurate timing"
+          },
+          {
+            "value": "nemotron",
+            "label": "Nemotron: 28 languages, including Arabic, Chinese, Hindi, Japanese, Korean, Norwegian, Turkish and Vietnamese"
+          }
+        ],
+        "help": "For files. Parakeet makes fewer mistakes and writes numbers as digits; Nemotron's word timing is estimated, so its cues can start a little early or late. Live captions always use Nemotron."
+      },
+      {
+        "key": "slice_by_phrases",
+        "type": "bool",
+        "label": "One cue per sentence",
+        "default": true,
+        "help": "On: one subtitle per sentence, however long. Off: a long sentence is split into subtitles of about two lines or 7 seconds at most."
+      },
+      {
+        "key": "label_speakers",
+        "type": "bool",
+        "label": "Label speakers",
+        "default": false,
+        "help": "Tells up to 8 speakers apart in a file (A, B, C...) and starts a new subtitle when the speaker changes. Downloads a 107 MB speaker model the first time and adds a pass over the audio of about a twentieth of its length. Not used for live captions."
+      },
+      {
+        "key": "live_delay",
+        "type": "select",
+        "label": "Live caption delay",
+        "default": "560",
+        "options": [
+          {
+            "value": "160",
+            "label": "160 ms: the quickest, the most mistakes"
+          },
+          {
+            "value": "320",
+            "label": "320 ms"
+          },
+          {
+            "value": "560",
+            "label": "560 ms: the default"
+          },
+          {
+            "value": "1120",
+            "label": "1.1 s: the fewest mistakes"
+          }
+        ],
+        "help": "How far ahead Nemotron listens before it writes a word while you record. Longer is more accurate."
+      }
+    ]
+  }
+}

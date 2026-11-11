@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "subtitld-addon-parakeet-nemotron"
+version = "26.11.1"
+description = "Subtitld add-on: offline speech-to-text with NVIDIA Parakeet and Nemotron, live captions and speaker labels"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Subtitld", email = "jbopen@gmail.com" }]
+requires-python = ">=3.10"
+
+# No runtime dependencies. Recognition is NVIDIA's NeMo-Speech.cpp, put in
+# build/assets/ by tools/build_native.py and loaded with ctypes; decoding is
+# the host's ffmpeg; the download uses the standard library.
+dependencies = []
+
+[project.optional-dependencies]
+build = ["pyinstaller>=6.10"]
+dev = ["pytest>=7.4"]
+
+[project.scripts]
+parakeet-nemotron-addon = "parakeet_nemotron_addon.__main__:main"
+
+[tool.setuptools]
+packages = ["parakeet_nemotron_addon"]
+
+[tool.setuptools.package-data]
+parakeet_nemotron_addon = ["pins.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

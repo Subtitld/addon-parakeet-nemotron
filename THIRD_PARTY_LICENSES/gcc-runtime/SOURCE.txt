@@ -1,0 +1,14 @@
+GCC runtime libraries — GPL-3.0-or-later WITH GCC-exception-3.1
+
+Texts: COPYING3 and COPYING.RUNTIME, from the GCC source tree.
+Upstream: https://gcc.gnu.org/
+
+Linux: libgomp.so.1 (GNU OpenMP, from AlmaLinux 8's GCC 8.5, the threads
+ggml computes with) is shipped beside the runtime, and the runtime is built
+with GCC 14 from gcc-toolset-14, which links the parts of libstdc++ newer than
+the system's GCC 8 into the libraries themselves. On macOS, NVIDIA's build of
+NeMo-Speech.cpp uses Apple's libc++ and carries no GCC code.
+
+The GCC Runtime Library Exception lets these libraries travel with a program
+under another licence without the program becoming GPL. No source offer is
+needed for the runtime libraries themselves.
