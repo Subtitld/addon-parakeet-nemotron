@@ -10,6 +10,8 @@ ctypes. This script provides that library and everything it loads:
   through tools/build_native_linux.sh, which starts the AlmaLinux 8 container.
 - Windows and macOS: NVIDIA's release archives, pinned by SHA-256 and cut
   down to the libraries the ASR C ABI loads.
+- Haiku: built from source on Haiku, the same way as Linux, against the
+  system's libroot, libstdc++ and libgomp (gcc_syslibs, on every install).
 
     python tools/build_native.py [--platform linux|windows|macos] [--jobs N]
 
@@ -52,6 +54,7 @@ C_ABI = {
     'linux': 'libnemo_speech_asr_c.so.1',
     'windows': 'nemo_speech_asr_c.dll',
     'macos': 'libnemo_speech_asr_c.1.dylib',
+    'haiku': 'libnemo_speech_asr_c.so.1',
 }
 
 # NVIDIA's release archives. `files` is the ASR C ABI's dependency closure,
@@ -111,6 +114,9 @@ LINUX_SYSTEM = {
 # archives do: ggml's threads use OpenMP (GOMP_1.0, GOMP_4.0, OMP_1.0, all
 # in GCC 8's libgomp). GPL-3 with the GCC Runtime Library Exception.
 LINUX_BUNDLE_FROM_SYSTEM = {'libgomp.so.1': Path('/usr/lib64/libgomp.so.1')}
+# Haiku: libroot is its C library; libstdc++, libgcc_s and libgomp come with
+# every install (gcc_syslibs), and libnetwork holds the sockets.
+HAIKU_SYSTEM = {'libroot.so', 'libstdc++.so.6', 'libgcc_s.so.1', 'libgomp.so.1', 'libnetwork.so', 'libbsd.so'}
 # The newest symbol version each AlmaLinux 8 (glibc 2.28, GCC 8) library
 # provides; a bundled library needing more would not load there.
 LINUX_CEILINGS = {
@@ -210,7 +216,17 @@ def check_linux(bundle):
     print('every library loads on glibc 2.28 with the GCC 8 runtime')
 
 
-def build_linux(jobs):
+def check_haiku(bundle):
+    """Fail on anything a Haiku install doesn't have."""
+    names = {p.name for p in bundle}
+    problems = [f'{lib.name} needs {dep}, which is neither bundled nor a system library'
+                for lib in bundle for dep in needed(lib) if dep not in names | HAIKU_SYSTEM]
+    if problems:
+        sys.exit('not loadable on Haiku:\n  ' + '\n  '.join(sorted(set(problems))))
+    print('every library needs only Haiku system libraries')
+
+
+def build_linux(jobs, platform='linux'):
     src = BUILD / 'nemo-speech-src'
     checkout(src)
     env = dict(os.environ, JOBS=str(jobs), CMAKE_BUILD_PARALLEL_LEVEL=str(jobs))
@@ -228,13 +244,14 @@ def build_linux(jobs):
     # loader asks for (SONAMEs), with $ORIGIN as their only search path.
     libdir = prefix / 'lib64' if (prefix / 'lib64').exists() else prefix / 'lib'
     fresh(ASSETS)
-    todo, seen = [C_ABI['linux']], set()
+    todo, seen = [C_ABI[platform]], set()
+    from_system = LINUX_BUNDLE_FROM_SYSTEM if platform == 'linux' else {}
     while todo:
         name = todo.pop()
         if name in seen:
             continue
         seen.add(name)
-        found = LINUX_BUNDLE_FROM_SYSTEM.get(name, libdir / name)
+        found = from_system.get(name, libdir / name)
         if not found.exists():
             continue  # a system library; check_linux() decides whether that's fine
         target = ASSETS / name
@@ -242,14 +259,15 @@ def build_linux(jobs):
         target.chmod(0o755)
         run(['patchelf', '--set-rpath', '$ORIGIN', target])
         todo.extend(needed(target))
-    check_linux(sorted(ASSETS.iterdir()))
+    (check_haiku if platform == 'haiku' else check_linux)(sorted(ASSETS.iterdir()))
 
     fresh(LICENCES)
     shutil.copytree(prefix / 'share' / 'licenses' / 'nemo-speech', LICENCES, dirs_exist_ok=True)
     spm = src / '.deps' / 'sentencepiece' / 'share' / 'licenses' / 'nemo-speech'
     if spm.exists():
         shutil.copytree(spm, LICENCES, dirs_exist_ok=True)
-    write_manifest('linux', f'{REPO} at {COMMIT}, built in AlmaLinux 8')
+    write_manifest(platform, f'{REPO} at {COMMIT}, built in AlmaLinux 8' if platform == 'linux'
+                   else f'{REPO} at {COMMIT}, built on Haiku')
 
 
 # ---- Windows and macOS: NVIDIA's archives ---------------------------------
@@ -321,7 +339,8 @@ def fetch_prebuilt(platform):
 
 
 def main():
-    host = {'linux': 'linux', 'win32': 'windows', 'darwin': 'macos'}.get(sys.platform)
+    host = 'haiku' if sys.platform.startswith('haiku') else {'linux': 'linux', 'win32': 'windows',
+                                                               'darwin': 'macos'}.get(sys.platform)
     parser = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
     parser.add_argument('--platform', choices=sorted(C_ABI), default=host)
     parser.add_argument('--jobs', type=int, default=int(os.environ.get('JOBS', os.cpu_count() or 4)))
@@ -330,8 +349,8 @@ def main():
         global ASSETS, LICENCES
         ASSETS = BUILD / f'assets-{args.platform}'
         LICENCES = BUILD / f'licences-{args.platform}' / 'nemo-speech'
-    if args.platform == 'linux':
-        build_linux(args.jobs)
+    if args.platform in ('linux', 'haiku'):
+        build_linux(args.jobs, args.platform)
     else:
         fetch_prebuilt(args.platform)
 

@@ -111,3 +111,12 @@ publishes a release for a `v*` tag.
 with (a US government work, in the public domain). `tests/data/nemo_speech/`
 holds NeMo-Speech.cpp v0.3.0's C headers (Apache-2.0, NVIDIA), which
 `tests/test_engine.py` checks the ctypes structs against.
+
+## Haiku
+
+NeMo-Speech.cpp is built from source on Haiku, the way the Linux build is (needs the patchelf package), so the Haiku archive is built on a Haiku machine and added to a release by hand. Haiku has no PyInstaller: the add-on runs on HaikuPorts' Python 3.14.
+
+```bash
+python3.14 tools/build_native.py
+python3.14 tools/build_haiku.py
+```

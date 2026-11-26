@@ -6,7 +6,10 @@ SPDX-License-Identifier: Apache-2.0
 
 from __future__ import annotations
 
+import shutil
 import sys
+import threading
+import time
 from array import array
 from pathlib import Path
 
@@ -15,6 +18,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
+from parakeet_nemotron_addon import __main__ as addon  # noqa: E402
 from parakeet_nemotron_addon import models, speakers  # noqa: E402
 from parakeet_nemotron_addon.__main__ import _options, _pcm_to_floats  # noqa: E402
 from parakeet_nemotron_addon.engine import Turn  # noqa: E402
@@ -222,3 +226,26 @@ def test_metal_is_used_only_where_a_child_survives_it(monkeypatch, tmp_path):
     monkeypatch.setattr(engine, '_apple_silicon', lambda: False)
     monkeypatch.setenv('PARAKEET_NEMOTRON_DEVICE', 'gpu')
     assert engine._gpu_choices('asr', tmp_path / 'm.gguf') == (-1,)
+
+
+# ---------------------------------------------------------------------------
+# Decoding the way Haiku does: a spawned shell, a temporary file
+# ---------------------------------------------------------------------------
+
+@pytest.mark.skipif(not shutil.which('ffmpeg'), reason='no ffmpeg')
+def test_the_haiku_decode_matches_the_pipe(monkeypatch):
+    jfk = str(REPO_ROOT / 'tests' / 'data' / 'jfk.wav')
+    piped = addon._decode('ffmpeg', jfk, threading.Event())
+    monkeypatch.setattr(addon, 'HAIKU', True)
+    assert addon._decode('ffmpeg', jfk, threading.Event()) == piped
+    with pytest.raises(addon._AddonError, match='Could not decode'):
+        addon._decode('ffmpeg', str(REPO_ROOT / 'README.md'), threading.Event())
+
+
+def test_the_haiku_decode_stops_on_cancel(tmp_path):
+    cancel = threading.Event()
+    cancel.set()
+    started = time.monotonic()
+    with pytest.raises(addon._Cancelled):
+        addon._run_ffmpeg_haiku(['sleep', '30'], str(tmp_path / 'err'), cancel)
+    assert time.monotonic() - started < 5
