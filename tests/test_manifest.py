@@ -36,7 +36,8 @@ def test_manifest_lists_what_the_code_offers():
     assert MANIFEST['languages'] == list(models.LANGUAGES)
     assert MANIFEST['compute'] == 'cpu' and MANIFEST['accelerators'] == ['mps']
     assert MANIFEST['executable'] == 'bin/parakeet-nemotron-addon'
-    assert set(MANIFEST['platforms']) == {'linux', 'macos', 'windows'}
+    assert set(MANIFEST['platforms']) == {'linux', 'macos', 'windows', 'haiku'}
+    assert MANIFEST['haiku_packages'] == ['python3.14']
 
 
 def test_options_match_the_code():
