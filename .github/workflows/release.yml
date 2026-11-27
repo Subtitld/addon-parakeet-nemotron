@@ -48,6 +48,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e '.[dev]'
 
+      # ffmpeg for the test that decodes the way Haiku does; not bundled.
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
       # The real transcription runs on each platform's frozen archive (build
       # job), and so does the check of the runtime.
       - name: Test suite
