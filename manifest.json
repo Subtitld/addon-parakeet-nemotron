@@ -1,7 +1,7 @@
 {
   "manifest_version": 1,
   "id": "parakeet-nemotron",
-  "version": "26.11.1",
+  "version": "26.11.2",
   "display_name": "Parakeet & Nemotron (offline, 33 languages)",
   "summary": "NVIDIA's Parakeet and Nemotron speech models, offline on your computer: subtitles from a file in 33 languages with accurate word timing, speaker labels if you want them, and live captions while you record in 28. Parakeet (714 MB) transcribes the 25 European languages and Nemotron (742 MB) the others and the live captions; each downloads the first time it is needed.",
   "author": "Subtitld",
